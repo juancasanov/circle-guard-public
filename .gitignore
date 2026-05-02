@@ -27,6 +27,7 @@ target/
 .classpath
 .project
 .factorypath
+.metals/
 
 # OS
 .DS_Store

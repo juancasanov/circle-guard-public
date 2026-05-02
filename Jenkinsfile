@@ -27,7 +27,7 @@ pipeline {
 
     stage('Test') {
       steps {
-        sh './gradlew test'
+        sh './gradlew test -Dspring.profiles.active=test'
       }
     }
 
