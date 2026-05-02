@@ -1,3 +1,5 @@
+import org.gradle.internal.os.OperatingSystem
+
 plugins {
     id("org.springframework.boot")
     id("io.spring.dependency-management")
@@ -29,4 +31,15 @@ dependencies {
     testImplementation("org.testcontainers:junit-jupiter:1.19.3")
     testImplementation("org.testcontainers:postgresql:1.19.3")
     testImplementation("org.testcontainers:neo4j:1.19.3")
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+
+    if (OperatingSystem.current().isWindows) {
+        environment("TESTCONTAINERS_DOCKER_CLIENT_STRATEGY", "org.testcontainers.dockerclient.DockerDesktopClientProviderStrategy")
+        environment("DOCKER_HOST", "npipe:////./pipe/docker_engine")
+        systemProperty("TESTCONTAINERS_DOCKER_CLIENT_STRATEGY", "org.testcontainers.dockerclient.DockerDesktopClientProviderStrategy")
+        systemProperty("docker.client.strategy", "org.testcontainers.dockerclient.DockerDesktopClientProviderStrategy")
+    }
 }

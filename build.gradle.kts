@@ -44,6 +44,12 @@ subprojects {
     }
 
     tasks.withType<Test> {
-        useJUnitPlatform()
+        useJUnitPlatform {
+            if (project.hasProperty("runIntegrationTests")) {
+                includeTags("integration")
+            } else {
+                excludeTags("integration")
+            }
+        }
     }
 }
