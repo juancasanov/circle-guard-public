@@ -12,6 +12,7 @@ build/
 *.zip
 *.tar.gz
 *.rar
+*.hpi
 
 # Maven
 target/
