@@ -29,6 +29,8 @@ target/
 .project
 .factorypath
 .metals/
+.bloop/
+.agent/
 
 # OS
 .DS_Store

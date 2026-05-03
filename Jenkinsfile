@@ -22,13 +22,13 @@ pipeline {
 
     stage('Build') {
       steps {
-        sh './gradlew clean bootJar --parallel'
+        sh './gradlew clean bootJar --parallel --build-cache --configure-on-demand'
       }
     }
 
     stage('Test') {
       steps {
-        sh './gradlew test --parallel --max-workers=3 -Dspring.profiles.active=test'
+        sh './gradlew test --parallel --max-workers=3 --build-cache --configure-on-demand -Dspring.profiles.active=test'
       }
     }
 
