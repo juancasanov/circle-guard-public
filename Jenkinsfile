@@ -1,5 +1,5 @@
 pipeline {
-  agent any
+  agent { label 'agent1' }
 
   parameters {
     choice(name: 'DEPLOY_ENV', choices: ['dev', 'stage', 'master'], description: 'Target deployment environment')
