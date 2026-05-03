@@ -120,6 +120,62 @@ cd mobile
 npm install
 ```
 
+---
+
+## 🗄️ Repositorio interno Maven/Gradle
+Para entornos sin acceso directo a internet, usa un repositorio interno con Nexus.
+
+### 1. Iniciar Nexus localmente
+```bash
+docker compose -f docker-compose.internal-repo.yml up -d
+```
+
+### 2. Acceder a Nexus
+Abre `http://localhost:8081` en tu navegador.
+
+- Usuario: `admin`
+- Contraseña inicial: revisa el archivo `./nexus-data/admin.password` dentro de la carpeta montada.
+- Crea un usuario y contraseña propios.
+
+### 3. Configurar repositorio Maven
+Dentro de Nexus, crea un repositorio de tipo **Maven (hosted)**.
+
+- Nombre sugerido: `maven-releases`
+- Deployment policy: `Allow Redeploy`
+- Version policy: `Release`
+
+Crea también un repositorio **Maven (hosted)** para snapshots:
+
+- Nombre sugerido: `maven-snapshots`
+- Deployment policy: `Allow Redeploy`
+- Version policy: `Snapshot`
+
+Y crea un **Repository Group** llamado `maven-internal` que incluya:
+- `maven-releases`
+- `maven-snapshots`
+- `maven-central` (proxy)
+
+### 4. Usar el repositorio en Gradle
+Configura `gradle.properties` con la URL de tu mirror:
+```properties
+internalRepoUrl=http://localhost:8081/repository/maven-internal/
+```
+
+O, si Jenkins corre en Docker, usa:
+```bash
+INTERNAL_REPO_URL=http://host.docker.internal:8081/repository/maven-internal/
+```
+
+### 5. Validar el build
+Ejecuta en el proyecto raíz:
+```bash
+./gradlew help --no-daemon
+```
+
+Si el internal repo está activo, Gradle usará primero esa URL para resolver plugins y dependencias.
+
+```
+
 ### 2. Run the Application
 You can run the app in various modes depending on your target platform:
 

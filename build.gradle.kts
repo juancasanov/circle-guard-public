@@ -11,6 +11,15 @@ allprojects {
     version = "1.0.0-SNAPSHOT"
 
     repositories {
+        val internalRepoUrl = (findProperty("internalRepoUrl") as String?)
+            ?: System.getenv("INTERNAL_REPO_URL")
+
+        if (!internalRepoUrl.isNullOrBlank()) {
+            maven {
+                url = uri(internalRepoUrl)
+                allowInsecureProtocol = true
+            }
+        }
         mavenCentral()
     }
 }

@@ -1,5 +1,14 @@
 pluginManagement {
+    val internalRepoUrl = providers.gradleProperty("internalRepoUrl").orNull
+        ?: providers.environmentVariable("INTERNAL_REPO_URL").orNull
+
     repositories {
+        if (!internalRepoUrl.isNullOrBlank()) {
+            maven {
+                url = uri(internalRepoUrl)
+                allowInsecureProtocol = true
+            }
+        }
         gradlePluginPortal()
         mavenCentral()
     }

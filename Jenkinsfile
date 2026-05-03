@@ -10,6 +10,7 @@ pipeline {
     GHCR_REGISTRY = 'ghcr.io'
     IMAGE_TAG = 'latest'
     SERVICES = 'gateway auth identity form promotion dashboard'
+    INTERNAL_REPO_URL = 'http://host.docker.internal:8081/repository/maven-internal/'
   }
 
   stages {

@@ -1,7 +1,7 @@
 FROM eclipse-temurin:21-jdk-alpine AS builder
 WORKDIR /workspace
 COPY gradlew .
-COPY build.gradle.kts settings.gradle.kts ./
+COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY gradle gradle
 RUN chmod +x ./gradlew && ./gradlew --no-daemon :services:circleguard-auth-service:dependencies
 COPY . .
