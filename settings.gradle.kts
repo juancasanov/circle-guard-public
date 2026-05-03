@@ -6,7 +6,7 @@ pluginManagement {
         if (!internalRepoUrl.isNullOrBlank()) {
             maven {
                 url = uri(internalRepoUrl)
-                allowInsecureProtocol = true
+                isAllowInsecureProtocol = true
             }
         }
         gradlePluginPortal()

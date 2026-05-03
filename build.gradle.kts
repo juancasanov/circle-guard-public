@@ -17,7 +17,7 @@ allprojects {
         if (!internalRepoUrl.isNullOrBlank()) {
             maven {
                 url = uri(internalRepoUrl)
-                allowInsecureProtocol = true
+                isAllowInsecureProtocol = true
             }
         }
         mavenCentral()
