@@ -28,7 +28,7 @@ pipeline {
 
     stage('Test') {
       steps {
-        sh './gradlew test -Dspring.profiles.active=test'
+        sh './gradlew test --parallel --max-workers=3 -Dspring.profiles.active=test'
       }
     }
 
