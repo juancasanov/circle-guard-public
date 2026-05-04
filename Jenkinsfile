@@ -48,6 +48,7 @@ pipeline {
             dir("services/${project}") {
               echo "Construyendo imagen para: ${project}"
               sh "docker build -t ${GHCR_REGISTRY}/${GHCR_OWNER}/${project}:${IMAGE_TAG} ."
+            }
           }
         }
       }
