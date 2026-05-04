@@ -1,5 +1,5 @@
 pipeline {
-  agent { label 'agent1' }
+  agent any
 
   parameters {
     choice(name: 'DEPLOY_ENV', choices: ['dev', 'stage', 'master'], description: 'Target deployment environment')
@@ -22,13 +22,13 @@ pipeline {
 
     stage('Build') {
       steps {
-        sh './gradlew clean bootJar --parallel --build-cache --configure-on-demand'
+        sh './gradlew clean bootJar --parallel --build-cache --configure-on-demand -Dorg.gradle.jvmargs="-Xmx2048m -XX:MaxMetaspaceSize=512m"'
       }
     }
 
     stage('Test') {
       steps {
-        sh './gradlew test --parallel --max-workers=3 --build-cache --configure-on-demand -Dspring.profiles.active=test'
+        sh './gradlew test --parallel --max-workers=2 --build-cache -Dspring.profiles.active=test -Dorg.gradle.jvmargs="-Xmx1536m"'
       }
     }
 
@@ -44,8 +44,10 @@ pipeline {
             dashboard: 'circleguard-dashboard-service'
           ]
           serviceMap.each { key, project ->
-            def imageName = "${GHCR_REGISTRY}/${GHCR_OWNER}/${project}:${IMAGE_TAG}"
-            sh "docker build -f services/${project}/Dockerfile -t ${imageName} ."
+
+            dir("services/${project}") {
+              echo "Construyendo imagen para: ${project}"
+              sh "docker build -t ${GHCR_REGISTRY}/${GHCR_OWNER}/${project}:${IMAGE_TAG} ."
           }
         }
       }
