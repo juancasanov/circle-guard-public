@@ -22,13 +22,13 @@ pipeline {
 
     stage('Build') {
       steps {
-        sh './gradlew clean bootJar --parallel --build-cache --configure-on-demand -Dorg.gradle.jvmargs="-Xmx2048m -XX:MaxMetaspaceSize=512m"'
+        sh './gradlew clean bootJar --build-cache -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=512m"'
       }
     }
 
     stage('Test') {
       steps {
-        sh './gradlew test --parallel --max-workers=2 --build-cache -Dspring.profiles.active=test -Dorg.gradle.jvmargs="-Xmx1536m"'
+        sh './gradlew test --no-parallel --max-workers=1 --build-cache -Dspring.profiles.active=test -Dorg.gradle.jvmargs="-Xmx1g"'
       }
     }
 
