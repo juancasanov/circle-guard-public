@@ -22,7 +22,7 @@ spec:
           image: ghcr.io/juancasanov/circleguard-form-service:dev-latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 8380
+            - containerPort: 8086
           resources:
             requests:
               memory: "128Mi"
@@ -66,13 +66,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /actuator/health
-              port: 8380
+              port: 8086
             initialDelaySeconds: 30
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /actuator/health
-              port: 8380
+              port: 8086
             initialDelaySeconds: 60
             periodSeconds: 30
 ---
@@ -88,7 +88,7 @@ spec:
   selector:
     app: circleguard-form-service
   ports:
-    - port: 8380
-      targetPort: 8380
+    - port: 8086
+      targetPort: 8086
       protocol: TCP
       name: http

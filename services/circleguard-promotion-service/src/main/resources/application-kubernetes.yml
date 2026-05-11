@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://192.168.49.1:5432/circleguard_promotion
+  neo4j:
+    uri: bolt://192.168.49.1:7687
+  kafka:
+    bootstrap-servers: 192.168.49.1:9092
+  data:
+    redis:
+      host: 192.168.49.1

@@ -1,0 +1,5 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://192.168.49.1:5432/circleguard_form
+  kafka:
+    bootstrap-servers: 192.168.49.1:9092

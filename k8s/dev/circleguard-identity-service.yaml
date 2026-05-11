@@ -22,7 +22,7 @@ spec:
           image: ghcr.io/juancasanov/circleguard-identity-service:dev-latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 8280
+            - containerPort: 8083
           resources:
             requests:
               memory: "128Mi"
@@ -81,13 +81,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /actuator/health
-              port: 8280
+              port: 8083
             initialDelaySeconds: 30
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /actuator/health
-              port: 8280
+              port: 8083
             initialDelaySeconds: 60
             periodSeconds: 30
 ---
@@ -103,7 +103,7 @@ spec:
   selector:
     app: circleguard-identity-service
   ports:
-    - port: 8280
-      targetPort: 8280
+    - port: 8083
+      targetPort: 8083
       protocol: TCP
       name: http

@@ -22,7 +22,7 @@ spec:
           image: ghcr.io/juancasanov/circleguard-gateway-service:dev-latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 8080
+            - containerPort: 8087
           resources:
             requests:
               memory: "128Mi"
@@ -56,13 +56,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /actuator/health
-              port: 8080
+              port: 8087
             initialDelaySeconds: 30
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /actuator/health
-              port: 8080
+              port: 8087
             initialDelaySeconds: 60
             periodSeconds: 30
 ---
@@ -78,7 +78,7 @@ spec:
   selector:
     app: circleguard-gateway-service
   ports:
-    - port: 8080
-      targetPort: 8080
+    - port: 8087
+      targetPort: 8087
       protocol: TCP
       name: http
