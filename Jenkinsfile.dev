@@ -16,13 +16,13 @@ pipeline {
 
     stage('BUILD') {
       steps {
-        sh './gradlew clean bootJar --build-cache -Dorg.gradle.jvmargs="-Xmx2g"'
+        sh './gradlew classes testClasses --build-cache -Dorg.gradle.daemon=true -Dorg.gradle.jvmargs="-Xmx2g"'
       }
     }
 
     stage('UNIT TESTS') {
       steps {
-        sh './gradlew test --no-parallel --max-workers=1 -Dspring.profiles.active=test -Dorg.gradle.jvmargs="-Xmx2g"'
+        sh './gradlew test --build-cache -Dorg.gradle.daemon=true -Dorg.gradle.jvmargs="-Xmx2g"'
       }
       post {
         always {
