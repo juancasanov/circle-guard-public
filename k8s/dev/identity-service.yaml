@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: circleguard-identity-service
+  namespace: circleguard-dev
+  labels:
+    app: circleguard-identity-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: circleguard-identity-service
+  template:
+    metadata:
+      labels:
+        app: circleguard-identity-service
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: identity
+          image: ghcr.io/juancasanov/circleguard-identity-service:dev-latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8280
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: DB_PORT
+            - name: DB_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: DB_USERNAME
+            - name: IDENTITY_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: IDENTITY_DB_URL
+            - name: IDENTITY_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: IDENTITY_DB_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: JWT_SECRET
+            - name: VAULT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: VAULT_SECRET
+            - name: VAULT_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: VAULT_SALT
+            - name: HASH_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: HASH_SALT
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8280
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8280
+            initialDelaySeconds: 60
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: circleguard-identity-service
+  namespace: circleguard-dev
+  labels:
+    app: circleguard-identity-service
+spec:
+  type: ClusterIP
+  selector:
+    app: circleguard-identity-service
+  ports:
+    - port: 8280
+      targetPort: 8280
+      protocol: TCP
+      name: http

@@ -1,0 +1,152 @@
+pipeline {
+  agent any
+
+  environment {
+    GHCR_OWNER = 'juancasanov'
+    GHCR_REGISTRY = 'ghcr.io'
+    IMAGE_TAG = "dev-${BUILD_NUMBER}"
+  }
+
+  stages {
+    stage('CHECKOUT') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('BUILD') {
+      steps {
+        sh './gradlew clean bootJar --build-cache -Dorg.gradle.jvmargs="-Xmx2g"'
+      }
+    }
+
+    stage('UNIT TESTS') {
+      steps {
+        sh './gradlew test --no-parallel --max-workers=1 -Dspring.profiles.active=test -Dorg.gradle.jvmargs="-Xmx2g"'
+      }
+      post {
+        always {
+          junit '**/build/test-results/test/*.xml'
+          script {
+            def services = ['gateway', 'auth', 'identity', 'form', 'promotion', 'dashboard']
+            for (svc in services) {
+              def project = "circleguard-${svc}-service"
+              publishHTML(target: [
+                allowMissing: true,
+                alwaysLinkToLastBuild: false,
+                keepAll: true,
+                reportDir: "services/${project}/build/reports/tests/test",
+                reportFiles: 'index.html',
+                reportName: "${project} Test Report"
+              ])
+            }
+          }
+        }
+      }
+    }
+
+    stage('DOCKER BUILD') {
+      steps {
+        script {
+          def projects = [
+            'circleguard-gateway-service',
+            'circleguard-auth-service',
+            'circleguard-identity-service',
+            'circleguard-form-service',
+            'circleguard-promotion-service',
+            'circleguard-dashboard-service'
+          ]
+          for (project in projects) {
+            def imageName = "${GHCR_REGISTRY}/${GHCR_OWNER}/${project}:${IMAGE_TAG}"
+            sh "docker build -f services/${project}/Dockerfile -t ${imageName} ."
+          }
+        }
+      }
+    }
+
+    stage('DOCKER PUSH') {
+      steps {
+        script {
+          withCredentials([usernamePassword(credentialsId: 'ghcr-credentials', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
+            sh "echo ${GHCR_TOKEN} | docker login ${GHCR_REGISTRY} -u ${GHCR_USER} --password-stdin"
+            def projects = [
+              'circleguard-gateway-service',
+              'circleguard-auth-service',
+              'circleguard-identity-service',
+              'circleguard-form-service',
+              'circleguard-promotion-service',
+              'circleguard-dashboard-service'
+            ]
+            for (project in projects) {
+              def imageName = "${GHCR_REGISTRY}/${GHCR_OWNER}/${project}:${IMAGE_TAG}"
+              sh "docker push ${imageName}"
+              sh "docker rmi ${imageName} || true"
+            }
+            sh 'docker image prune -f'
+          }
+        }
+      }
+    }
+
+    stage('DEPLOY DEV') {
+      steps {
+        script {
+          def namespace = 'circleguard-dev'
+          def projects = [
+            'circleguard-gateway-service',
+            'circleguard-auth-service',
+            'circleguard-identity-service',
+            'circleguard-form-service',
+            'circleguard-promotion-service',
+            'circleguard-dashboard-service'
+          ]
+
+          sh "kubectl create namespace ${namespace} --dry-run=client -o yaml | kubectl apply -f -"
+
+          sh "sed -i 's/:dev-latest/:${IMAGE_TAG}/g' k8s/dev/*-service.yaml"
+
+          sh "kubectl apply -f k8s/dev/configmaps.yaml --namespace ${namespace}"
+          sh "kubectl apply -f k8s/dev/secrets.yaml --namespace ${namespace}"
+          for (project in projects) {
+            sh "kubectl apply -f k8s/dev/${project}.yaml --namespace ${namespace}"
+          }
+
+          for (project in projects) {
+            sh "kubectl rollout status deployment/${project} --namespace ${namespace} --timeout=120s"
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo '=== SERVICIOS DESPLEGADOS ==='
+      echo 'http://circleguard-gateway-service:8080'
+      echo 'http://circleguard-auth-service:8180'
+      echo 'http://circleguard-identity-service:8280'
+      echo 'http://circleguard-form-service:8380'
+      echo 'http://circleguard-promotion-service:8480'
+      echo 'http://circleguard-dashboard-service:8084'
+    }
+    failure {
+      script {
+        def namespace = 'circleguard-dev'
+        def projects = [
+          'circleguard-gateway-service',
+          'circleguard-auth-service',
+          'circleguard-identity-service',
+          'circleguard-form-service',
+          'circleguard-promotion-service',
+          'circleguard-dashboard-service'
+        ]
+        for (project in projects) {
+          sh """
+            echo "=== Logs de ${project} ==="
+            kubectl logs deployment/${project} --namespace ${namespace} --tail=50 2>&1 || echo "No logs for ${project}"
+          """
+        }
+      }
+    }
+  }
+}

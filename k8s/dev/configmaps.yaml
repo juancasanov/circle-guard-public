@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: circleguard-config
+  namespace: circleguard-dev
+data:
+  DB_HOST: circleguard-postgres
+  DB_PORT: "5432"
+  DB_USERNAME: admin
+  REDIS_HOST: circleguard-redis
+  REDIS_PORT: "6379"
+  KAFKA_BOOTSTRAP_SERVERS: circleguard-kafka:9092
+  NEO4J_URI: bolt://circleguard-neo4j:7687
+  NEO4J_USERNAME: neo4j
+  LDAP_URLS: ldap://circleguard-ldap:389
+  LDAP_BASE: dc=circleguard,dc=edu
+  LDAP_USERNAME: cn=admin,dc=circleguard,dc=edu
+  AUTH_DB_URL: jdbc:postgresql://circleguard-postgres:5432/circleguard_auth
+  IDENTITY_DB_URL: jdbc:postgresql://circleguard-postgres:5432/circleguard_identity
+  FORM_DB_URL: jdbc:postgresql://circleguard-postgres:5432/circleguard_form
+  PROMOTION_DB_URL: jdbc:postgresql://circleguard-postgres:5432/circleguard_promotion
+  DASHBOARD_DB_URL: jdbc:postgresql://circleguard-postgres:5432/circleguard_dashboard
