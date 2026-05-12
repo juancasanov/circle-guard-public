@@ -2,6 +2,10 @@ jwt:
   secret: "my-super-secret-test-key-32-chars-long"
   expiration: 3600000
 
+qr:
+  secret: "my-qr-secret-test-key-1234567890"
+  expiration: 300
+
 spring:
   main:
     allow-bean-definition-overriding: true
@@ -14,3 +18,5 @@ spring:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
       ddl-auto: create-drop
+  flyway:
+    enabled: false

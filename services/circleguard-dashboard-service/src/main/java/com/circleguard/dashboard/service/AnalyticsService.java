@@ -62,8 +62,10 @@ public class AnalyticsService {
      * Queries the local dashboard DB for event history.
      */
     public List<Map<String, Object>> getTimeSeries(String period, int limit) {
-        // period: "hourly" or "daily"
-        String truncation = "daily".equals(period) ? "day" : "hour";
+        String truncation = switch (period) {
+            case "daily" -> "day";
+            default -> "hour";
+        };
         
         String query = "SELECT date_trunc('" + truncation + "', event_time) as bucket, " +
                        "status, count(*) as total " +

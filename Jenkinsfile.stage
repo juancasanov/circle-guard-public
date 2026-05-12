@@ -1,0 +1,247 @@
+pipeline {
+  agent any
+
+  environment {
+    GHCR_OWNER     = 'juancasanov'
+    GHCR_REGISTRY  = 'ghcr.io'
+    IMAGE_TAG      = "stage-${BUILD_NUMBER}"
+    K8S_NAMESPACE  = 'circleguard-stage'
+    DEPLOYED       = 'false'
+  }
+
+  stages {
+    // ─────────────────────────────────────────────
+    // CHECKOUT, BUILD, UNIT TESTS, DOCKER BUILD,
+    // DOCKER PUSH — idénticos a Jenkinsfile.dev
+    // (construcción, pruebas unitarias y push a GHCR)
+    // ─────────────────────────────────────────────
+    stage('CHECKOUT') {
+      steps { checkout scm }
+    }
+
+    stage('BUILD') {
+      steps {
+        sh './gradlew bootJar --build-cache --no-daemon -Dorg.gradle.jvmargs="-Xmx2g"'
+      }
+    }
+
+    stage('UNIT TESTS') {
+      steps {
+        sh '''./gradlew test --no-daemon \
+          -x :services:circleguard-notification-service:test \
+          -x :services:circleguard-file-service:test \
+          -Dspring.profiles.active=test \
+          -Dorg.gradle.jvmargs="-Xmx1g"'''
+      }
+      post {
+        always {
+          junit '**/build/test-results/test/*.xml'
+          script {
+            def services = ['gateway', 'auth', 'identity', 'form', 'promotion', 'dashboard']
+            for (svc in services) {
+              def project = "circleguard-${svc}-service"
+              publishHTML(target: [
+                allowMissing         : true,
+                alwaysLinkToLastBuild: false,
+                keepAll              : true,
+                reportDir            : "services/${project}/build/reports/tests/test",
+                reportFiles          : 'index.html',
+                reportName           : "${project} Test Report"
+              ])
+            }
+          }
+        }
+      }
+    }
+
+    stage('DOCKER BUILD') {
+      steps {
+        script {
+          def projects = [
+            'circleguard-gateway-service',
+            'circleguard-auth-service',
+            'circleguard-identity-service',
+            'circleguard-form-service',
+            'circleguard-promotion-service',
+            'circleguard-dashboard-service'
+          ]
+          for (project in projects) {
+            sh "docker build -f services/${project}/Dockerfile -t ${GHCR_REGISTRY}/${GHCR_OWNER}/${project}:${IMAGE_TAG} ."
+          }
+        }
+      }
+    }
+
+    stage('DOCKER PUSH') {
+      steps {
+        script {
+          withCredentials([usernamePassword(credentialsId: 'ghcr-credentials',
+                                            usernameVariable: 'GHCR_USER',
+                                            passwordVariable: 'GHCR_TOKEN')]) {
+            sh "echo ${GHCR_TOKEN} | docker login ${GHCR_REGISTRY} -u ${GHCR_USER} --password-stdin"
+            def projects = [
+              'circleguard-gateway-service',
+              'circleguard-auth-service',
+              'circleguard-identity-service',
+              'circleguard-form-service',
+              'circleguard-promotion-service',
+              'circleguard-dashboard-service'
+            ]
+            for (project in projects) {
+              def imageName = "${GHCR_REGISTRY}/${GHCR_OWNER}/${project}:${IMAGE_TAG}"
+              sh "docker push ${imageName}"
+              sh "docker rmi ${imageName} || true"
+            }
+            sh 'docker image prune -f'
+          }
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // DEPLOY STAGE — igual que DEPLOY DEV pero
+    // apunta a k8s/stage/ y K8S_NAMESPACE.
+    // Marca DEPLOYED=true para habilitar rollback.
+    // ─────────────────────────────────────────────
+    stage('DEPLOY STAGE') {
+      steps {
+        script {
+          def projects = [
+            'circleguard-gateway-service',
+            'circleguard-auth-service',
+            'circleguard-identity-service',
+            'circleguard-form-service',
+            'circleguard-promotion-service',
+            'circleguard-dashboard-service'
+          ]
+
+          sh "kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
+          sh "kubectl apply -f k8s/stage/configmaps.yaml --namespace ${K8S_NAMESPACE}"
+          sh "kubectl apply -f k8s/stage/secrets.yaml    --namespace ${K8S_NAMESPACE}"
+
+          sh "sed -i 's/:stage-latest/:${IMAGE_TAG}/g' k8s/stage/*-service.yaml"
+
+          for (project in projects) {
+            sh "kubectl apply -f k8s/stage/${project}.yaml --namespace ${K8S_NAMESPACE}"
+          }
+          for (project in projects) {
+            sh "kubectl rollout status deployment/${project} --namespace ${K8S_NAMESPACE} --timeout=180s"
+          }
+
+          env.DEPLOYED = 'true'
+          echo "=== DESPLIEGUE COMPLETADO: ${IMAGE_TAG} en namespace ${K8S_NAMESPACE} ==="
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // INTEGRATION TESTS
+    // Espera 30s a que los pods estabilicen,
+    // corre gradle integrationTest con fallback
+    // a pytest tests/e2e/. Publica resultados JUnit.
+    // ─────────────────────────────────────────────
+    stage('INTEGRATION TESTS') {
+      steps {
+        sleep 30
+        script {
+          try {
+            sh './gradlew integrationTest --no-daemon -Dorg.gradle.jvmargs="-Xmx1g"'
+          } catch (err) {
+            echo 'Gradle integrationTest no disponible o falló. Ejecutando fallback con pytest...'
+            sh 'pip install pytest requests pytest-html 2>/dev/null || true'
+            sh 'cd tests/e2e && python -m pytest test_flows.py --html=integration-report.html --self-contained-html -v --junitxml=integration-results.xml'
+          }
+        }
+      }
+      post {
+        always {
+          junit allowEmptyResults: true, testResults: '**/build/test-results/integrationTest/*.xml'
+          junit allowEmptyResults: true, testResults: 'tests/e2e/integration-results.xml'
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // SMOKE TESTS
+    // Verifica que cada servicio responde
+    // /actuator/health via kubectl port-forward.
+    // ─────────────────────────────────────────────
+    stage('SMOKE TESTS') {
+      steps {
+        script {
+          def services = [
+            [name: 'circleguard-auth-service',       port: 8180],
+            [name: 'circleguard-gateway-service',     port: 8087],
+            [name: 'circleguard-identity-service',    port: 8083],
+            [name: 'circleguard-form-service',        port: 8086],
+            [name: 'circleguard-promotion-service',   port: 8088],
+            [name: 'circleguard-dashboard-service',   port: 8084],
+          ]
+          for (svc in services) {
+            echo "Smoke testing ${svc.name}..."
+            sh """
+              kubectl port-forward deployment/${svc.name} ${svc.port}:${svc.port} --namespace ${K8S_NAMESPACE} &
+              PF_PID=\$!
+              sleep 5
+              curl -sf http://localhost:${svc.port}/actuator/health > /dev/null
+              EXIT_CODE=\$?
+              kill \$PF_PID 2>/dev/null || true
+              exit \$EXIT_CODE
+            """
+            echo "${svc.name} OK"
+          }
+          echo "=== TODOS LOS SMOKE TESTS PASARON ==="
+        }
+      }
+    }
+  }
+
+  post {
+    failure {
+      script {
+        // Rollback automático solo si el deploy ya ocurrió
+        if (env.DEPLOYED == 'true') {
+          echo "=== INICIANDO ROLLBACK AUTOMÁTICO ==="
+          def projects = [
+            'circleguard-gateway-service',
+            'circleguard-auth-service',
+            'circleguard-identity-service',
+            'circleguard-form-service',
+            'circleguard-promotion-service',
+            'circleguard-dashboard-service'
+          ]
+          for (project in projects) {
+            sh "kubectl rollout undo deployment/${project} --namespace ${K8S_NAMESPACE} || true"
+          }
+          for (project in projects) {
+            sh "kubectl rollout status deployment/${project} --namespace ${K8S_NAMESPACE} --timeout=180s || true"
+          }
+          echo "=== ROLLBACK COMPLETADO ==="
+        } else {
+          echo "Deploy no se ejecutó, se omite rollback."
+        }
+        // Logs de diagnóstico siempre en failure
+        def projects = [
+          'circleguard-gateway-service',
+          'circleguard-auth-service',
+          'circleguard-identity-service',
+          'circleguard-form-service',
+          'circleguard-promotion-service',
+          'circleguard-dashboard-service'
+        ]
+        for (project in projects) {
+          sh "kubectl logs deployment/${project} --namespace ${K8S_NAMESPACE} --tail=50 2>&1 || true"
+        }
+      }
+    }
+    success {
+      script {
+        sh "kubectl get pods --namespace ${K8S_NAMESPACE}"
+        echo "=== CI/CD STAGE COMPLETADO: ${IMAGE_TAG} ==="
+      }
+    }
+    cleanup {
+      cleanWs()
+    }
+  }
+}

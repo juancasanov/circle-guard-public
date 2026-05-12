@@ -19,6 +19,7 @@ public class PriorityAlertListener {
 
     private final ObjectMapper objectMapper;
     private final TemplateService templateService;
+    private final EmailService emailService;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${auth.api.url:http://circleguard-auth-service:8080}")
@@ -34,7 +35,6 @@ public class PriorityAlertListener {
             
             log.info("Processing {} Priority Alert. Affected: {}", eventType, affectedCount);
 
-            // Fetch users with the alert:receive_priority permission
             String url = authApiUrl + "/api/v1/users/permissions/alert:receive_priority";
             @SuppressWarnings("unchecked")
             List<Map<String, String>> admins = restTemplate.getForObject(url, List.class);
@@ -45,8 +45,8 @@ public class PriorityAlertListener {
                     String username = admin.get("username");
                     if (email != null && !email.isEmpty()) {
                         log.info("Dispatching priority alert to admin email: {}", email);
-                        // Using TemplateService to mock the dispatch for now.
-                        templateService.generateEmailContent(eventType, username);
+                        String emailContent = templateService.generateEmailContent(eventType, username);
+                        emailService.sendAsync(email, emailContent);
                     }
                 }
             } else {

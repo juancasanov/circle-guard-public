@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: circleguard-promotion-service
+  namespace: circleguard-stage
+  labels:
+    app: circleguard-promotion-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: circleguard-promotion-service
+  template:
+    metadata:
+      labels:
+        app: circleguard-promotion-service
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: promotion
+          image: ghcr.io/juancasanov/circleguard-promotion-service:stage-latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8088
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: DB_PORT
+            - name: DB_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: DB_USERNAME
+            - name: PROMOTION_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: PROMOTION_DB_URL
+            - name: PROMOTION_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: PROMOTION_DB_PASSWORD
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: REDIS_PORT
+            - name: NEO4J_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: NEO4J_URI
+            - name: NEO4J_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: NEO4J_USERNAME
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: NEO4J_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8088
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8088
+            initialDelaySeconds: 60
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: circleguard-promotion-service
+  namespace: circleguard-stage
+  labels:
+    app: circleguard-promotion-service
+spec:
+  type: ClusterIP
+  selector:
+    app: circleguard-promotion-service
+  ports:
+    - port: 8088
+      targetPort: 8088
+      protocol: TCP
+      name: http

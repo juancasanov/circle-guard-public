@@ -29,7 +29,8 @@ public class EmailServiceImpl implements EmailService {
         try {
             log.debug("Attempting to send email to user: {}", userId);
             SimpleMailMessage mailMessage = new SimpleMailMessage();
-            mailMessage.setTo(userId + "@example.com"); 
+            String recipient = userId.contains("@") ? userId : userId + "@example.com";
+            mailMessage.setTo(recipient);
             mailMessage.setSubject("CircleGuard Health Alert");
             mailMessage.setText(message);
             
@@ -40,7 +41,7 @@ public class EmailServiceImpl implements EmailService {
         } catch (Exception e) {
             log.warn("Failed to send email to user {} (correlationId: {}): {}", userId, correlationId, e.getMessage());
             auditLogService.logDelivery(userId, "EMAIL", "RETRY", correlationId);
-            throw e; // Rethrow to trigger retry
+            throw e;
         }
     }
 

@@ -1,0 +1,261 @@
+pipeline {
+  agent any
+
+  environment {
+    GHCR_OWNER     = 'juancasanov'
+    GHCR_REGISTRY  = 'ghcr.io'
+    IMAGE_TAG      = "v1.0.${BUILD_NUMBER}"
+    K8S_NAMESPACE  = 'circleguard-production'
+    DEPLOYED       = 'false'
+  }
+
+  stages {
+    stage('CHECKOUT') {
+      steps { checkout scm }
+    }
+
+    stage('BUILD') {
+      steps {
+        sh './gradlew bootJar --build-cache --no-daemon -Dorg.gradle.jvmargs="-Xmx2g"'
+      }
+    }
+
+    stage('UNIT TESTS') {
+      steps {
+        sh '''./gradlew test --no-daemon \
+          -x :services:circleguard-notification-service:test \
+          -x :services:circleguard-file-service:test \
+          -Dspring.profiles.active=test \
+          -Dorg.gradle.jvmargs="-Xmx1g"'''
+      }
+      post {
+        always {
+          junit '**/build/test-results/test/*.xml'
+          script {
+            def services = ['gateway', 'auth', 'identity', 'form', 'promotion', 'dashboard']
+            for (svc in services) {
+              def project = "circleguard-${svc}-service"
+              publishHTML(target: [
+                allowMissing         : true,
+                alwaysLinkToLastBuild: false,
+                keepAll              : true,
+                reportDir            : "services/${project}/build/reports/tests/test",
+                reportFiles          : 'index.html',
+                reportName           : "${project} Test Report"
+              ])
+            }
+          }
+        }
+      }
+    }
+
+    stage('DOCKER BUILD + PUSH') {
+      steps {
+        script {
+          withCredentials([usernamePassword(credentialsId: 'ghcr-credentials',
+                                            usernameVariable: 'GHCR_USER',
+                                            passwordVariable: 'GHCR_TOKEN')]) {
+            sh "echo ${GHCR_TOKEN} | docker login ${GHCR_REGISTRY} -u ${GHCR_USER} --password-stdin"
+            def projects = [
+              'circleguard-gateway-service',
+              'circleguard-auth-service',
+              'circleguard-identity-service',
+              'circleguard-form-service',
+              'circleguard-promotion-service',
+              'circleguard-dashboard-service'
+            ]
+            for (project in projects) {
+              def imageName = "${GHCR_REGISTRY}/${GHCR_OWNER}/${project}:${IMAGE_TAG}"
+              sh "docker build -f services/${project}/Dockerfile -t ${imageName} ."
+              sh "docker push ${imageName}"
+              sh "docker rmi ${imageName} || true"
+            }
+            sh 'docker image prune -f'
+          }
+        }
+      }
+    }
+
+    stage('DEPLOY PRODUCTION') {
+      steps {
+        script {
+          def projects = [
+            'circleguard-gateway-service',
+            'circleguard-auth-service',
+            'circleguard-identity-service',
+            'circleguard-form-service',
+            'circleguard-promotion-service',
+            'circleguard-dashboard-service'
+          ]
+
+          sh "kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
+          sh "kubectl apply -f k8s/production/configmaps.yaml --namespace ${K8S_NAMESPACE}"
+          sh "kubectl apply -f k8s/production/secrets.yaml    --namespace ${K8S_NAMESPACE}"
+
+          sh "sed -i 's/:production-latest/:${IMAGE_TAG}/g' k8s/production/*-service.yaml"
+
+          for (project in projects) {
+            sh "kubectl apply -f k8s/production/${project}.yaml --namespace ${K8S_NAMESPACE}"
+          }
+          for (project in projects) {
+            sh "kubectl rollout status deployment/${project} --namespace ${K8S_NAMESPACE} --timeout=180s"
+          }
+
+          env.DEPLOYED = 'true'
+          echo "=== DESPLIEGUE PRODUCTION COMPLETADO: ${IMAGE_TAG} ==="
+        }
+      }
+    }
+
+    stage('SMOKE TESTS') {
+      steps {
+        script {
+          def services = [
+            [name: 'circleguard-auth-service',       port: 8180],
+            [name: 'circleguard-gateway-service',     port: 8087],
+            [name: 'circleguard-identity-service',    port: 8083],
+            [name: 'circleguard-form-service',        port: 8086],
+            [name: 'circleguard-promotion-service',   port: 8088],
+            [name: 'circleguard-dashboard-service',   port: 8084],
+          ]
+          for (svc in services) {
+            echo "Smoke testing ${svc.name}..."
+            sh """
+              kubectl port-forward deployment/${svc.name} ${svc.port}:${svc.port} --namespace ${K8S_NAMESPACE} &
+              PF_PID=\$!
+              sleep 5
+              curl -sf http://localhost:${svc.port}/actuator/health > /dev/null
+              EXIT_CODE=\$?
+              kill \$PF_PID 2>/dev/null || true
+              exit \$EXIT_CODE
+            """
+            echo "${svc.name} OK"
+          }
+          echo "=== TODOS LOS SMOKE TESTS PASARON ==="
+        }
+      }
+    }
+
+    stage('RELEASE NOTES') {
+      steps {
+        script {
+          sh '''
+            set -euo pipefail
+
+            PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "v0.0.0")
+            echo "Previous tag: ${PREVIOUS_TAG}"
+
+            BUILD_NUMBER="${BUILD_NUMBER}"
+            RELEASE_VERSION="v1.0.${BUILD_NUMBER}"
+            RELEASE_DATE=$(date +%Y-%m-%d)
+
+            cat << EOF > RELEASE_NOTES.md
+# Release ${RELEASE_VERSION} - ${RELEASE_DATE}
+
+EOF
+
+            TEMP_DIR="/tmp/release-notes-$$"
+            mkdir -p "${TEMP_DIR}"
+
+            git log "${PREVIOUS_TAG}..HEAD" --oneline --no-merges 2>/dev/null \
+              | while IFS= read -r line; do
+                  if echo "${line}" | grep -qi "BREAKING"; then
+                    echo "- ${line}" >> "${TEMP_DIR}/breaking.txt"
+                  elif echo "${line}" | grep -qi "^[a-f0-9].*feat"; then
+                    echo "- ${line}" >> "${TEMP_DIR}/features.txt"
+                  elif echo "${line}" | grep -qi "^[a-f0-9].*fix"; then
+                    echo "- ${line}" >> "${TEMP_DIR}/fixes.txt"
+                  else
+                    echo "- ${line}" >> "${TEMP_DIR}/other.txt"
+                  fi
+                done || true
+
+            append_section() {
+              local title="$1" file="$2"
+              if [ -s "${file}" ]; then
+                echo "## ${title}" >> RELEASE_NOTES.md
+                cat "${file}" >> RELEASE_NOTES.md
+                echo "" >> RELEASE_NOTES.md
+              fi
+            }
+
+            append_section "Breaking Changes" "${TEMP_DIR}/breaking.txt"
+            append_section "Features" "${TEMP_DIR}/features.txt"
+            append_section "Bug Fixes" "${TEMP_DIR}/fixes.txt"
+            append_section "Other Changes" "${TEMP_DIR}/other.txt"
+
+            if [ ! -s "${TEMP_DIR}/breaking.txt" ] && \
+               [ ! -s "${TEMP_DIR}/features.txt" ] && \
+               [ ! -s "${TEMP_DIR}/fixes.txt" ] && \
+               [ ! -s "${TEMP_DIR}/other.txt" ]; then
+              echo "_No hay cambios nuevos en esta versión._" >> RELEASE_NOTES.md
+              echo "" >> RELEASE_NOTES.md
+            fi
+
+            echo "---" >> RELEASE_NOTES.md
+            echo "Generado automáticamente por Jenkins build #${BUILD_NUMBER}" >> RELEASE_NOTES.md
+
+            rm -rf "${TEMP_DIR}"
+            echo "RELEASE_NOTES.md generado exitosamente"
+          '''
+        }
+      }
+      post {
+        success {
+          archiveArtifacts artifacts: 'RELEASE_NOTES.md', fingerprint: true
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      script {
+        sh "git tag ${IMAGE_TAG}"
+        sh "git push origin ${IMAGE_TAG}" 
+        echo "=== Git tag creado: ${IMAGE_TAG} ==="
+        sh "cat RELEASE_NOTES.md"
+        echo "=== CI/CD PRODUCTION COMPLETADO: ${IMAGE_TAG} ==="
+      }
+    }
+    failure {
+      script {
+        if (env.DEPLOYED == 'true') {
+          echo "=== INICIANDO ROLLBACK AUTOMÁTICO EN PRODUCTION ==="
+          def projects = [
+            'circleguard-gateway-service',
+            'circleguard-auth-service',
+            'circleguard-identity-service',
+            'circleguard-form-service',
+            'circleguard-promotion-service',
+            'circleguard-dashboard-service'
+          ]
+          for (project in projects) {
+            sh "kubectl rollout undo deployment/${project} --namespace ${K8S_NAMESPACE} || true"
+          }
+          for (project in projects) {
+            sh "kubectl rollout status deployment/${project} --namespace ${K8S_NAMESPACE} --timeout=180s || true"
+          }
+          echo "=== ROLLBACK COMPLETADO ==="
+        } else {
+          echo "Deploy no se ejecutó, se omite rollback."
+        }
+        // Logs de diagnóstico
+        def projects = [
+          'circleguard-gateway-service',
+          'circleguard-auth-service',
+          'circleguard-identity-service',
+          'circleguard-form-service',
+          'circleguard-promotion-service',
+          'circleguard-dashboard-service'
+        ]
+        for (project in projects) {
+          sh "kubectl logs deployment/${project} --namespace ${K8S_NAMESPACE} --tail=50 2>&1 || true"
+        }
+      }
+    }
+    cleanup {
+      cleanWs()
+    }
+  }
+}

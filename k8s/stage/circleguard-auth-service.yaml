@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: circleguard-auth-service
+  namespace: circleguard-stage
+  labels:
+    app: circleguard-auth-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: circleguard-auth-service
+  template:
+    metadata:
+      labels:
+        app: circleguard-auth-service
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: auth
+          image: ghcr.io/juancasanov/circleguard-auth-service:stage-latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8180
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: DB_PORT
+            - name: DB_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: DB_USERNAME
+            - name: AUTH_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: AUTH_DB_URL
+            - name: AUTH_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: AUTH_DB_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: JWT_SECRET
+            - name: QR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: QR_SECRET
+            - name: LDAP_URLS
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: LDAP_URLS
+            - name: LDAP_BASE
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: LDAP_BASE
+            - name: LDAP_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: circleguard-config
+                  key: LDAP_USERNAME
+            - name: LDAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: circleguard-secrets
+                  key: LDAP_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8180
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8180
+            initialDelaySeconds: 60
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: circleguard-auth-service
+  namespace: circleguard-stage
+  labels:
+    app: circleguard-auth-service
+spec:
+  type: ClusterIP
+  selector:
+    app: circleguard-auth-service
+  ports:
+    - port: 8180
+      targetPort: 8180
+      protocol: TCP
+      name: http
